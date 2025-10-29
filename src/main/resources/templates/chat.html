@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>Chat</title>
+	<style>
+		body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+		.container { max-width: 720px; margin: 24px auto; padding: 0 16px; }
+		.header { display: flex; align-items: center; justify-content: space-between; }
+		.messages { border: 1px solid #ddd; border-radius: 8px; height: 420px; overflow-y: auto; padding: 12px; background: #fafafa; }
+		.message { margin: 8px 0; }
+		.message .sender { font-weight: bold; margin-right: 6px; }
+		.form { display: flex; gap: 8px; margin-top: 12px; }
+		.form input { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 6px; }
+		.form button { padding: 10px 16px; border: none; border-radius: 6px; background: #2563eb; color: white; cursor: pointer; }
+		.form button:disabled { background: #94a3b8; cursor: not-allowed; }
+	</style>
+</head>
+<body>
+	<div class="container">
+		<div class="header">
+			<h2>실시간 채팅</h2>
+			<div>
+				<label>닉네임: <input id="username" placeholder="닉네임" /></label>
+				<button id="connectBtn">접속</button>
+				<button id="disconnectBtn" disabled>종료</button>
+			</div>
+		</div>
+		<div id="messages" class="messages"></div>
+		<form id="chatForm" class="form">
+			<input id="message" placeholder="메시지를 입력하세요" />
+			<button id="sendBtn" type="submit" disabled>전송</button>
+		</form>
+	</div>
+
+	<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+	<script>
+		let stompClient = null;
+		const messagesEl = document.getElementById('messages');
+		const usernameEl = document.getElementById('username');
+		const connectBtn = document.getElementById('connectBtn');
+		const disconnectBtn = document.getElementById('disconnectBtn');
+		const formEl = document.getElementById('chatForm');
+		const inputEl = document.getElementById('message');
+		const sendBtn = document.getElementById('sendBtn');
+
+		function appendMessage(sender, content) {
+			const div = document.createElement('div');
+			div.className = 'message';
+			div.innerHTML = `<span class="sender">${sender}</span><span class="content">${content}</span>`;
+			messagesEl.appendChild(div);
+			messagesEl.scrollTop = messagesEl.scrollHeight;
+		}
+
+		function setConnected(connected) {
+			connectBtn.disabled = connected;
+			disconnectBtn.disabled = !connected;
+			sendBtn.disabled = !connected;
+			inputEl.disabled = !connected;
+		}
+
+		connectBtn.addEventListener('click', () => {
+			const username = usernameEl.value?.trim();
+			if (!username) { alert('닉네임을 입력하세요.'); return; }
+			const socket = new SockJS('/ws');
+			stompClient = Stomp.over(socket);
+			stompClient.connect({}, () => {
+				setConnected(true);
+				appendMessage('SYSTEM', `${username} 님이 입장했습니다.`);
+				stompClient.subscribe('/topic/public', (message) => {
+					const payload = JSON.parse(message.body);
+					appendMessage(payload.sender || '익명', payload.content || '');
+				});
+			});
+		});
+
+		disconnectBtn.addEventListener('click', () => {
+			if (stompClient) {
+				stompClient.disconnect(() => setConnected(false));
+			}
+		});
+
+		formEl.addEventListener('submit', (e) => {
+			e.preventDefault();
+			if (!stompClient || !stompClient.connected) return;
+			const username = usernameEl.value?.trim() || '익명';
+			const content = inputEl.value?.trim();
+			if (!content) return;
+			stompClient.send('/app/chat.send', {}, JSON.stringify({
+				sender: username,
+				content: content,
+				type: 'CHAT'
+			}));
+			inputEl.value = '';
+		});
+	</script>
+</body>
+</html>
+
+
